@@ -2,3 +2,7 @@
 .carml_config.yml
 *.out
 .env.companion
+*pycache/
+.env*
+__pycache__/
+*tmp*
