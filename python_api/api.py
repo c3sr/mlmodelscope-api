@@ -335,9 +335,10 @@ async def predict(request: PredictRequest):
     first_input=inputs[0]
 
 
-    # xxx
-    trail= get_trial_by_model_and_input( model_id, first_input["src"])
+
+    trail= get_trial_by_model_and_input( model_id, inputs)
     # print(trail)
+
     # print("trial")
     if trail and trail[2] is not None:
         # print(trail[2])
