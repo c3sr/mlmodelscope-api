@@ -39,6 +39,6 @@ fi
 IMAGE_NAME="$REGISTRY/mlmodelscope-api:$VERSION"
 
 docker build -t "$IMAGE_NAME" --file "$DOCKERFILE" "$TARGET_DIR"
-# docker tag "$IMAGE_NAME" "$REGISTRY/mlmodelscope-api:latest"
+docker tag "$IMAGE_NAME" "$REGISTRY/mlmodelscope-api:latest"
 
 cleanup_and_exit
