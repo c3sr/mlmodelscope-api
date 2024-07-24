@@ -319,7 +319,7 @@ async def predict(request: PredictRequest):
     architecture = request.architecture
     batch_size = request.batchSize
     desired_result_modality = request.desiredResultModality
-    gpu = True
+    gpu = request.gpu
     inputs = request.inputs
     # input_url = request.input_url
     model_id = request.model
