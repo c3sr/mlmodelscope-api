@@ -36,9 +36,9 @@ if [ ! -f "$DOCKERFILE" ]; then
     die_with_message "Dockerfile ${DOCKERFILE} does not exist"
 fi
 
-IMAGE_NAME="$REGISTRY/$TARGET:$VERSION"
+IMAGE_NAME="$REGISTRY/mlmodelscope-api:$VERSION"
 
 docker build -t "$IMAGE_NAME" --file "$DOCKERFILE" "$TARGET_DIR"
-docker tag "$IMAGE_NAME" "$REGISTRY/$TARGET:latest"
+# docker tag "$IMAGE_NAME" "$REGISTRY/mlmodelscope-api:latest"
 
 cleanup_and_exit
