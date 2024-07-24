@@ -36,7 +36,9 @@ if [ ! -f "$DOCKERFILE" ]; then
     die_with_message "Dockerfile ${DOCKERFILE} does not exist"
 fi
 
-docker build -t "$REGISTRY-$TARGET:$VERSION" --file "$DOCKERFILE" "$TARGET_DIR"
-docker tag "$REGISTRY-$TARGET:$VERSION" "$REGISTRY-$TARGET:latest"
+IMAGE_NAME="$REGISTRY/$TARGET:$VERSION"
+
+docker build -t "$IMAGE_NAME" --file "$DOCKERFILE" "$TARGET_DIR"
+docker tag "$IMAGE_NAME" "$REGISTRY/$TARGET:latest"
 
 cleanup_and_exit
