@@ -9,10 +9,7 @@ MQ_PORT = int(os.environ.get('MQ_PORT', '5672'))
 MQ_USER = os.environ.get('MQ_USER', 'user')
 MQ_PASS = os.environ.get('MQ_PASS', 'password')
 
-print(MQ_HOST)
-print(MQ_PORT)
-print(MQ_USER)
-print(MQ_PASS)
+
 
 def connect():
     parameters = pika.ConnectionParameters(

@@ -19,6 +19,7 @@ import logging
 from typing import Optional
 from  schema_mlmodelscope import *
 from datetime import datetime
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
@@ -28,6 +29,14 @@ async def add_cors_header(request, call_next):
     response = await call_next(request)
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
+
+    # enable cors
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
     logging.error(f"An error occurred: {exc}")
@@ -305,7 +314,7 @@ async def predict(request: PredictRequest):
 
     # data = request.get_json()
     # print(data)
-    print(request)
+    # print(request)
 
     architecture = request.architecture
     batch_size = request.batchSize
@@ -322,16 +331,16 @@ async def predict(request: PredictRequest):
     if inputs and len(inputs)>1:
         has_multi_input=True
     config = request.config
-    print(inputs[0])
+    # print(inputs[0])
     first_input=inputs[0]
 
 
     # xxx
     trail= get_trial_by_model_and_input( model_id, first_input["src"])
-    print(trail)
-    print("trial")
+    # print(trail)
+    # print("trial")
     if trail and trail[2] is not None:
-        print(trail[2])
+        # print(trail[2])
         experiment_id = trail[0]
         trial_id = trail[1]
         return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model_id, "input_url": inputs[0]}
@@ -344,7 +353,7 @@ async def predict(request: PredictRequest):
 
         trial_id=create_trial( model_id, experiment_id, cur, conn)
         create_trial_inputs(trial_id, inputs, cur, conn)
-        print(trial_id)
+        # print(trial_id)
 
 
         model=get_model_by_id(model_id,cur,conn)
@@ -421,7 +430,7 @@ async def get_trial(trial_id: str):
 
     if not row:
         raise Exception(f"No trial found with ID {trial_id}")
-    print(row)
+    # print(row)
     # Prepare the response structure
     result = {
         "id": row['trial_id'],
