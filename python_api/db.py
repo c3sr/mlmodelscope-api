@@ -48,11 +48,12 @@ def create_expriement( cur, conn):
 
 
 def get_trial_by_model_and_input(model_id, input_url):
-
+    input_url=json.loads(input_url)
+    input_url=input_url["url"]
     input_query = """
             SELECT trial_id
             FROM trial_inputs
-            WHERE url = %s
+            WHERE %s in url
         """
 
     # Main query to get trial details
