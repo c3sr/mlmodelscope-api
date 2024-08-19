@@ -262,7 +262,7 @@ async def get_experiment(experiment_id: str):
 
             # Fetch all results
     rows = cur.fetchall()
-
+    print(rows)
     if not rows:
         raise Exception(f"No experiment found with ID {experiment_id}")
 
@@ -307,6 +307,7 @@ class PredictRequest(BaseModel):
     model: int
     traceLevel: str
     config : Optional[dict] = Field(default={})
+    experiment : Optional[str] = Field(default=None)
 
 @app.post("/predict")
 async def predict(request: PredictRequest):
@@ -332,9 +333,12 @@ async def predict(request: PredictRequest):
         has_multi_input=True
     config = request.config
     # print(inputs[0])
-    first_input=inputs[0]
-
-
+    
+    experiment_id=request.experiment
+    # print(experiment_id)
+   
+     
+    # experiment_id=create_expriement( cur, conn)
 
     trail= get_trial_by_model_and_input( model_id, inputs)
     # print(trail)
@@ -343,14 +347,23 @@ async def predict(request: PredictRequest):
     if trail and trail[2] is not None:
         # print(trail[2])
         experiment_id = trail[0]
-        trial_id = trail[1]
-        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model_id, "input_url": inputs[0]}
-    else:
-        #create a new trial and generate a new uuid experiment
         cur,conn=get_db_cur_con()
+        trial_id = trail[1]
+        
+        model=get_model_by_id(model_id,cur,conn)
+        if not experiment_id:
+            experiment_id=create_expriement(cur, conn)
+
+        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"], "input_url": inputs}
+    else:
+        cur,conn=get_db_cur_con()
+        if not experiment_id:
+            experiment_id=create_expriement(cur, conn)
+        # create a new trial and generate a new uuid experiment
+        # cur,conn=get_db_cur_con()
         
 
-        experiment_id=create_expriement( cur, conn)
+        
 
         trial_id=create_trial( model_id, experiment_id, cur, conn)
         create_trial_inputs(trial_id, inputs, cur, conn)
@@ -369,7 +382,7 @@ async def predict(request: PredictRequest):
         message= makePredictMessage(architecture, batch_size, desired_result_modality, gpu, inputs,has_multi_input,context,config, model["name"], trace_level, 0, "localhost:6831")
 
         sendPredictMessage(message,queue_name,trial_id)
-        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"]}
+        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"],"input_url": inputs}
 
 
 

@@ -37,7 +37,9 @@ def create_trial( model_id, experiment_id, cur, conn):
     return trial_id
 
 def create_trial_inputs(trial_id, inputs, cur, conn):
-    cur.execute("INSERT INTO trial_inputs (created_at,updated_at,trial_id, url) VALUES (%s,%s,%s, %s)", ( datetime.now(),   datetime.now(),trial_id, json.dumps(inputs)))
+    cur.execute("SELECT MAX(id) as id FROM trial_inputs")
+    max_id = int(cur.fetchone()["id"])
+    cur.execute("INSERT INTO trial_inputs (id,created_at,updated_at,trial_id, url) VALUES (%s,%s,%s,%s, %s)", (max_id+1, datetime.now(),   datetime.now(),trial_id, json.dumps(inputs)))
     conn.commit()
 
 def create_expriement( cur, conn):
