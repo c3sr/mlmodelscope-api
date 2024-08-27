@@ -30,9 +30,9 @@ def close_db_cur_con(cur, conn):
     cur.close()
     conn.close()
 
-def create_trial( model_id, experiment_id, cur, conn):
+def create_trial( model_id, experiment_id, cur, conn,source_id="",completed_at=None):
     trial_id= str(uuid.uuid4())
-    cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at ,experiment_id) VALUES (%s,%s,%s,%s, %s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now()  , experiment_id))
+    cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,completed_at,experiment_id,source_trial_id) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now()  ,datetime.now()  , experiment_id,source_id))
     conn.commit()
     return trial_id
 
@@ -123,7 +123,7 @@ def get_trial_by_model_and_input(model_id, input_urls):
 
         # Assuming the columns are returned in the order you expect
         # You may need to adjust this depending on your database schema
-        return (trial['experiment_id'], trial['trial_id'], trial['completed_at'])
+        return (trial['trial_id'])
 
 
     except (Exception, psycopg2.DatabaseError) as error:

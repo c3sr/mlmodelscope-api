@@ -340,25 +340,30 @@ async def predict(request: PredictRequest):
      
     # experiment_id=create_expriement( cur, conn)
 
-    trail= get_trial_by_model_and_input( model_id, inputs)
-    # print(trail)
-
-    # print("trial")
-    if trail and trail[2] is not None:
-        # print(trail[2])
-        experiment_id = trail[0]
+    trial= get_trial_by_model_and_input( model_id, inputs)
+    if not experiment_id:
         cur,conn=get_db_cur_con()
-        trial_id = trail[1]
+        experiment_id=create_expriement(cur, conn)
+
+
+    # print(trail)
+    # if trail[2]
+    # print("trial")
+    if trial: #existing trial
+        # print(trail[2])
+        
+        cur,conn=get_db_cur_con()
+        source_trial = trial
         
         model=get_model_by_id(model_id,cur,conn)
-        if not experiment_id:
-            experiment_id=create_expriement(cur, conn)
+        new_trial_id=create_trial( model_id, experiment_id, cur, conn,source_trial)
+        # if not experiment_id:
+        #     experiment_id=create_expriement(cur, conn)
 
-        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"], "input_url": inputs}
+        return {"experimentId": experiment_id, "trialId": new_trial_id, "model_id": model["name"], "input_url": inputs}
     else:
         cur,conn=get_db_cur_con()
-        if not experiment_id:
-            experiment_id=create_expriement(cur, conn)
+
         # create a new trial and generate a new uuid experiment
         # cur,conn=get_db_cur_con()
         
@@ -396,9 +401,11 @@ async def delete_trial(trial_id: str):
 @app.get("/trial/{trial_id}")
 async def get_trial(trial_id: str):
     cur,conn=get_db_cur_con()
+    
     cur.execute("""
             SELECT t.id AS trial_id,
                 t.result,
+                t.source_trial_id as source_trial,
                     t.completed_at,
                     ti.url AS input_url,
                     m.id AS modelId,
@@ -443,7 +450,10 @@ async def get_trial(trial_id: str):
     row = cur.fetchone()
 
     if not row:
-        raise Exception(f"No trial found with ID {trial_id}")
+        # raise Exception(f"No trial found with ID {trial_id}")
+        return None
+    if row["source_trial"] is not None:
+        return get_trial(row["source_trial"])
     # print(row)
     # Prepare the response structure
     result = {
