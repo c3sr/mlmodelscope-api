@@ -32,7 +32,10 @@ def close_db_cur_con(cur, conn):
 
 def create_trial( model_id, experiment_id, cur, conn,source_id="",completed_at=None):
     trial_id= str(uuid.uuid4())
-    cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,completed_at,experiment_id,source_trial_id) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now()  ,datetime.now()  , experiment_id,source_id))
+    if source_id!="":
+        cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,completed_at,experiment_id,source_trial_id) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now()  ,datetime.now()  , experiment_id,source_id))
+    else:
+        cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,experiment_id) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now() , experiment_id))
     conn.commit()
     return trial_id
 
@@ -77,7 +80,7 @@ def get_trial_by_model_and_input(model_id, input_urls):
         JOIN experiments ON trials.experiment_id = experiments.id
         JOIN models ON trials.model_id = models.id
         JOIN trial_inputs ON trials.id = trial_inputs.trial_id
-        WHERE trials.completed_at IS NOT NULL
+        WHERE trials.results IS NOT NULL
         AND trials.model_id = %s
         AND ({input_query})
     """
