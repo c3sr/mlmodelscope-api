@@ -35,7 +35,7 @@ def create_trial( model_id, experiment_id, cur, conn,source_id="",completed_at=N
     if source_id!="":
         cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,completed_at,experiment_id,source_trial_id) VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now()  ,datetime.now()  , experiment_id,source_id))
     else:
-        cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,experiment_id) VALUES (%s,%s,%s,%s) RETURNING id", (trial_id,model_id,   datetime.now(),   datetime.now() , experiment_id))
+        cur.execute("INSERT INTO trials (id,model_id,created_at,updated_at,experiment_id) VALUES (%s,%s,%s,%s,%s) RETURNING id", (trial_id, model_id,   datetime.now(),   datetime.now() , experiment_id))
     conn.commit()
     return trial_id
 
