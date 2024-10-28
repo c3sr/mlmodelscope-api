@@ -12,7 +12,3 @@ type Framework struct {
 	Version       string         `json:"version"`
 	Architectures []Architecture `json:"architectures"`
 }
-type User struct {
-	gorm.Model
-	ID string `gorm:"primaryKey" json:"id"`
-}
