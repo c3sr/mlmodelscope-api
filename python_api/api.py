@@ -85,8 +85,17 @@ async def get_models(
 
     sql_query += " GROUP BY models.id, frameworks.name, frameworks.version"
 
-    cur.execute(sql_query, params)
-    rows = cur.fetchall()
+    try:
+        cur.execute(sql_query, params)
+        rows = cur.fetchall()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {sql_query} in function get_models")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
+    # cur.execute(sql_query, params)
+    # rows = cur.fetchall()
 
     models = []
     for row_dict in rows:
@@ -149,8 +158,15 @@ async def get_model(model_id: int):
     JOIN frameworks ON frameworks.id = models.framework_id
     LEFT JOIN architectures ON architectures.framework_id = frameworks.id WHERE models.id = %s GROUP BY models.id, frameworks.name, frameworks.version"""
     # cur.execute(f"SELECT * FROM models WHERE id={model_id} AND deleted_at IS NULL")
-    cur.execute(query, (model_id,))
-    row_dict = cur.fetchone()
+    try:
+        cur.execute(query, (model_id,))
+        row_dict = cur.fetchone()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {query} in function get_model")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
 
     model = {
         "id": row_dict["id"],
@@ -202,14 +218,21 @@ async def get_model(model_id: int):
 async def get_frameworks():
     cur,conn=get_db_cur_con()
 
-    cur.execute("""
-            SELECT f.id as framework_id, f.name as framework_name, f.version,
+    query = """ SELECT f.id as framework_id, f.name as framework_name, f.version,
                    a.name as architecture_name
             FROM frameworks f
             LEFT JOIN architectures a ON a.framework_id = f.id
-        """)
-    rows = cur.fetchall()
-    cur.close()
+    """
+    try:
+        cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {query} in function get_frameworks")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
 
     frameworks_dict = {}
     for row in rows:
@@ -233,8 +256,15 @@ async def get_frameworks():
 async def get_framework(framework_id: int):
     # get all models from the database as json
     cur,conn=get_db_cur_con()
-    cur.execute(f"SELECT * FROM frameworks WHERE id={framework_id}")
-    framework = cur.fetchone()
+    try:
+        cur.execute(f"SELECT * FROM frameworks WHERE id={framework_id}")
+        framework = cur.fetchone()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {query} in function get_framework")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
     # print(model)
     json_framework = Framework(*framework).to_dict()
     return{"framework": json_framework}
@@ -248,8 +278,7 @@ async def version():
 
 @app.get("/experiments/{experiment_id}")
 async def get_experiment(experiment_id: str):
-    cur,conn=get_db_cur_con()
-    cur.execute("""
+    query = """
                 SELECT e.id AS experiment_id,
                        t.id AS trial_id,
                        t.created_at,
@@ -258,13 +287,25 @@ async def get_experiment(experiment_id: str):
                 FROM experiments e
                 JOIN trials t ON e.id = t.experiment_id
                 WHERE e.id = %s
-            """, (experiment_id,))
+            """
+    cur,conn=get_db_cur_con()
+    try:
+        cur.execute(query, (experiment_id,))
 
-            # Fetch all results
-    rows = cur.fetchall()
-    print(rows)
+                # Fetch all results
+        rows = cur.fetchall()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {query} in function get_experiment")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
     if not rows:
-        raise Exception(f"No experiment found with ID {experiment_id}")
+        #raise Exception(f"No experiment found with ID {experiment_id}") # this crashes the whole program
+        return JSONResponse(
+            status_code=404,
+            content={"message": f"No experiment found with ID {experiment_id}"},
+        )
 
     # Prepare the response structure
     result = {
@@ -402,13 +443,20 @@ async def delete_trial(trial_id: str):
 @app.get("/trial/{trial_id}")
 async def get_trial(trial_id: str):
     cur,conn=get_db_cur_con()
-
+    query="""
+                SELECT * FROM trials t
+                WHERE t.id = %s
+            """
     # check if trial has a source trial 
-    cur.execute("""
-            SELECT * FROM trials t
-            WHERE t.id = %s
-        """, (trial_id,))
-    row = cur.fetchone()
+    try:
+        cur.execute(query, (trial_id,))
+        row = cur.fetchone()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {query} in function get_trial")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
     if row["source_trial_id"] is not None:
         # print("\n\n\n\n\n\n\n\n\n\n")
         # print(row["source_trial_id"])
@@ -419,54 +467,60 @@ async def get_trial(trial_id: str):
                 
     cur.close()
     cur,conn=get_db_cur_con()
+    query = """
+                SELECT t.id AS trial_id,
+                    t.result,
+                    t.source_trial_id as source_trial_id,
+                        t.completed_at,
+                        ti.url AS input_url,
+                        m.id AS modelId,
+                        m.created_at AS model_created_at,
 
-    
-    cur.execute("""
-            SELECT t.id AS trial_id,
-                t.result,
-                t.source_trial_id as source_trial_id,
-                    t.completed_at,
-                    ti.url AS input_url,
-                    m.id AS modelId,
-                    m.created_at AS model_created_at,
+                        m.updated_at AS model_updated_at,
+                        m.attribute_top1 AS top1,
+                        m.attribute_top5 AS top5,
+                        m.attribute_kind AS kind,
+                        m.attribute_manifest_author AS manifest_author,
+                        m.attribute_training_dataset AS training_dataset,
+                        m.description,
+                        m.short_description,
+                    m.detail_graph_checksum AS graph_checksum,
+                    m.detail_graph_path AS graph_path,
+                    m.detail_weights_checksum AS weights_checksum,
+                    m.detail_weights_path AS weights_path,
+                    f.id AS framework_id,
+                        f.name AS framework_name,
+                        f.version AS framework_version,
+                        m.input_description,
+                        m.input_type,
+                        m.license,
+                        m.name AS model_name,
+                        m.output_description,
+                        m.output_type,
+                        m.url_github,
+                        m.url_citation,
+                        m.url_link1,
+                        m.url_link2,
+                        a.name AS architecture_name
+                FROM trials t
+                JOIN trial_inputs ti ON t.id = ti.trial_id
 
-                    m.updated_at AS model_updated_at,
-                    m.attribute_top1 AS top1,
-                    m.attribute_top5 AS top5,
-                    m.attribute_kind AS kind,
-                    m.attribute_manifest_author AS manifest_author,
-                    m.attribute_training_dataset AS training_dataset,
-                    m.description,
-                    m.short_description,
-                m.detail_graph_checksum AS graph_checksum,
-                m.detail_graph_path AS graph_path,
-                m.detail_weights_checksum AS weights_checksum,
-                m.detail_weights_path AS weights_path,
-                f.id AS framework_id,
-                    f.name AS framework_name,
-                    f.version AS framework_version,
-                    m.input_description,
-                    m.input_type,
-                    m.license,
-                    m.name AS model_name,
-                    m.output_description,
-                    m.output_type,
-                    m.url_github,
-                    m.url_citation,
-                    m.url_link1,
-                    m.url_link2,
-                    a.name AS architecture_name
-            FROM trials t
-            JOIN trial_inputs ti ON t.id = ti.trial_id
-            
-            JOIN models m ON t.model_id = m.id
-            JOIN frameworks f ON m.framework_id = f.id
-            LEFT JOIN architectures a ON a.framework_id = f.id
-            WHERE t.id = %s
-        """, (trial_id,))
+                JOIN models m ON t.model_id = m.id
+                JOIN frameworks f ON m.framework_id = f.id
+                LEFT JOIN architectures a ON a.framework_id = f.id
+                WHERE t.id = %s
+            """
+    try:
+        cur.execute(query, (trial_id,))
 
-        # Fetch the result
-    row = cur.fetchone()
+            # Fetch the result
+        row = cur.fetchone()
+    except Exception as e:
+        logging.error(f"An error occurred: {e} while executing query: {query} in function get_trial")
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        ) 
 
     if not row:
         raise Exception(f"No trial found with ID {trial_id}")
