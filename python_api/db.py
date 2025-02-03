@@ -4,6 +4,8 @@ import os
 from datetime import datetime
 import uuid
 import json
+import time
+
 # get environment variables
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_PORT = os.environ.get('DB_PORT', '5432')
@@ -40,13 +42,27 @@ def create_trial( model_id, experiment_id, cur, conn,source_id="",completed_at=N
     return trial_id
 
 def create_trial_inputs(trial_id, inputs, cur, conn):
-    cur.execute("SELECT MAX(id) as id FROM trial_inputs")
-    try:
-        max_id = int(cur.fetchone()["id"])
-    except:
-        max_id = 0
-    cur.execute("INSERT INTO trial_inputs (id,created_at,updated_at,trial_id, url) VALUES (%s,%s,%s,%s, %s)", (max_id+1, datetime.now(),   datetime.now(),trial_id, json.dumps(inputs)))
-    conn.commit()
+    while True:
+        try:
+            # Fetch the latest max ID
+            cur.execute("SELECT MAX(id) as id FROM trial_inputs")
+            max_id = cur.fetchone()["id"]
+            max_id = int(max_id) if max_id is not None else 0  # Handle NULL case
+            
+            # Attempt to insert with incremented ID
+            cur.execute("""
+                INSERT INTO trial_inputs (id, created_at, updated_at, trial_id, url)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (max_id + 1, datetime.now(), datetime.now(), trial_id, json.dumps(inputs)))
+
+            conn.commit()
+            break  # Exit loop on success
+     
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            conn.rollback()  # Rollback in case of duplicate key violation
+            time.sleep(0.1)  # Small delay before retrying to avoid excessive looping
+            continue  # Retry fetching max_id and inserting again
 
 def create_expriement( cur, conn):
     experiment_id= str(uuid.uuid4())
