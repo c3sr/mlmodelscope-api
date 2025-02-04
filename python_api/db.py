@@ -45,7 +45,7 @@ def create_trial_inputs(trial_id, inputs, cur, conn):
     while True:
         try:
             # Fetch the latest max ID
-            cur.execute("SELECT LAST_VALUE(id) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS id FROM trial_inputs LIMIT 1")
+            cur.execute("SELECT MAX(id) as id FROM trial_inputs")
             max_id = cur.fetchone()["id"]
             max_id = int(max_id) if max_id is not None else 0  # Handle NULL case
             

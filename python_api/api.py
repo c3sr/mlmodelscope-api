@@ -382,10 +382,12 @@ async def predict(request: PredictRequest):
     # experiment_id=create_expriement( cur, conn)
 
     trial= get_trial_by_model_and_input( model_id, inputs)
-    # print(trial)
+    print("-"*20,experiment_id,"-"*20)
     if not experiment_id:
+        print("+"*20,"ENTERED IF","+"*20)
         cur,conn=get_db_cur_con()
         experiment_id=create_expriement(cur, conn)
+        print("+"*20,"ENTERED IF", experiment_id,"+"*20)
 
 
     # print(trail)
@@ -401,7 +403,7 @@ async def predict(request: PredictRequest):
         new_trial_id=create_trial( model_id, experiment_id, cur, conn,source_trial)
         # if not experiment_id:
         #     experiment_id=create_expriement(cur, conn)
-
+        print("*"*20,"RETURNING IF TRIAL", experiment_id,"*"*20)
         return {"experimentId": experiment_id, "trialId": new_trial_id, "model_id": model["name"], "input_url": inputs}
     else:
         cur,conn=get_db_cur_con()
@@ -429,6 +431,7 @@ async def predict(request: PredictRequest):
         message= makePredictMessage(architecture, batch_size, desired_result_modality, gpu, inputs,has_multi_input,context,config, model["name"], trace_level, 0, "localhost:6831")
 
         sendPredictMessage(message,queue_name,trial_id)
+        print("*"*20,"RETURNING ELSE TRIAL", experiment_id,"*"*20)
         return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"],"input_url": inputs}
 
 
