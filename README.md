@@ -71,7 +71,6 @@ The additional components launched are:
 * Companion - assists in cloud storage uploads
 * Traefik - reverse proxy, see below for details
 * Consul - service discovery
-* A suite of services to support monitoring with Prometheus/Grafana
 
 ## Deployment
 

@@ -14,7 +14,7 @@ tracer:
   provider: jaeger
   endpoints:
     - localhost:9411
-  level: FULL_TRACE
+  level: NO_TRACE
 logger:
   hooks:
     - syslog

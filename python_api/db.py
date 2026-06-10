@@ -8,10 +8,10 @@ import time
 
 # get environment variables
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
-DB_PORT = os.environ.get('DB_PORT', '5432')
-DB_USER = os.environ.get('DB_USER', 'user')
+DB_PORT = os.environ.get('DB_PORT', '15432')
+DB_USER = os.environ.get('DB_USER', 'postgres')
 DB_PASS = os.environ.get('DB_PASS', 'password')
-DB_NAME = os.environ.get('DB_NAME', 'db')
+DB_NAME = os.environ.get('DB_NAME', 'postgres')
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 def get_db_cur_con(cursor_factory=psycopg2.extras.RealDictCursor):
@@ -151,4 +151,3 @@ def get_trial_by_model_and_input(model_id, input_urls):
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Error: {error}")
         return None
-   

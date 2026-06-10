@@ -4,6 +4,18 @@ http:
       loadBalancer:
         servers:
           - url: "http://host.docker.internal:3000/"
+    mlmodelscope-api:
+      loadBalancer:
+        servers:
+          - url: "http://api:8000/"
+    mlmodelscope-companion:
+      loadBalancer:
+        servers:
+          - url: "http://companion:3020/"
+    mlmodelscope-trace:
+      loadBalancer:
+        servers:
+          - url: "http://trace:16686/"
 
   routers:
     mlmodelscope-www:
@@ -11,3 +23,18 @@ http:
         - "web"
       rule: "Host(`local.mlmodelscope.org`)"
       service: mlmodelscope-www
+    mlmodelscope-api:
+      entryPoints:
+        - "web"
+      rule: "Host(`api.local.mlmodelscope.org`)"
+      service: mlmodelscope-api
+    mlmodelscope-companion:
+      entryPoints:
+        - "web"
+      rule: "Host(`companion.local.mlmodelscope.org`)"
+      service: mlmodelscope-companion
+    mlmodelscope-trace:
+      entryPoints:
+        - "web"
+      rule: "Host(`trace.local.mlmodelscope.org`)"
+      service: mlmodelscope-trace

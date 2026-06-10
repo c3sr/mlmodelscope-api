@@ -6,8 +6,8 @@ import time
 
 MQ_HOST = os.environ.get('MQ_HOST', 'localhost')
 MQ_PORT = int(os.environ.get('MQ_PORT', '5672'))
-MQ_USER = os.environ.get('MQ_USER', 'user')
-MQ_PASS = os.environ.get('MQ_PASS', 'password')
+MQ_USER = os.environ.get('MQ_USER', 'guest')
+MQ_PASS = os.environ.get('MQ_PASS', os.environ.get('MQ_PASSWORD', 'guest'))
 
 
 
@@ -62,4 +62,3 @@ def sendPredictMessage(message, queue_name, correlation_id):
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             break
-

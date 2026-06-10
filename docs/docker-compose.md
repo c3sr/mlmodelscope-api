@@ -22,15 +22,6 @@ The following services are defined in the primary Compose file:
 | mq        | RabbitMQ message queue                                    |
 | trace     | Jaeger tracing service, required by ML agents             |
 
-Additionally the following services are defined for monitoring purposes:
-
-| Service       | Description                                       |
-|---------------|---------------------------------------------------|
-| grafana       | Grafana dashboard for monitoring                  |
-| prometheus    | Prometheus monitoring service                     |
-| node-exporter | Prometheus exporter for system metrics            |
-| cadvisor      | Container Advisor exports container-based metrics |
-
 The Compose Override file defines the following additional services:
 
 | Service | Description                                                                 |

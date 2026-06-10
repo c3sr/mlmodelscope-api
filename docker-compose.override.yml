@@ -1,32 +1,42 @@
-version: "3.8"
 services:
   api:
     build:
-      context: ./api/
-      dockerfile: ../docker/Dockerfile.api
+      # context: ./api/
+      # dockerfile: ../docker/Dockerfile.api
+      context: ./python_api/
+      dockerfile: ../docker/Dockerfile.python_api
+
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_PASS: "$DB_PASSWORD"
+      DB_NAME: "$DB_DBNAME"
+      MQ_HOST: mq
+      MQ_PORT: 5672
 
     depends_on:
-      - db
-      - mq
-      - traefik
+      db:
+        condition: service_healthy
+      mq:
+        condition: service_healthy
+
+    ports:
+      - "8005:8000"
 
     networks:
       - default
       - traefik
 
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik"
-      - "traefik.http.routers.mlmodelscope-api.rule=Host(`api.${ENVIRONMENT}mlmodelscope.org`)"
-      - "traefik.http.routers.mlmodelscope-api.entrypoints=web"
-      - "traefik.http.services.mlmodelscope-api.loadbalancer.server.port=8080"
-      - "traefik.http.middlewares.add-cors.headers.accessControlAllowMethods=GET,OPTIONS,POST,PUT,DELETE"
-      - "traefik.http.middlewares.add-cors.headers.accesscontrolalloworiginlist=http://local.mlmodelscope.org,http://localhost:3000"
-      - "traefik.http.middlewares.add-cors.headers.accessControlAllowCredentials=true"
-      - "traefik.http.middlewares.add-cors.headers.accessControlAllowHeaders=origin,x-requested-with,content-type,accept,x-request-id"
-      - "traefik.http.middlewares.add-cors.headers.accesscontrolmaxage=100"
-      - "traefik.http.middlewares.add-cors.headers.addvaryheader=true"
-      - "traefik.http.routers.mlmodelscope-api.middlewares=add-cors"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
 
     deploy:
       restart_policy:
@@ -37,26 +47,9 @@ services:
     env_file:
       - .env.companion
 
-    depends_on:
-      - traefik
-
     networks:
       - default
       - traefik
-
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik"
-      - "traefik.http.routers.mlmodelscope-companion.rule=Host(`companion.${ENVIRONMENT}mlmodelscope.org`)"
-      - "traefik.http.routers.mlmodelscope-companion.entrypoints=web"
-      - "traefik.http.services.mlmodelscope-companion.loadbalancer.server.port=3020"
-      - "traefik.http.middlewares.add-cors-companion.headers.accessControlAllowMethods=GET,OPTIONS,POST"
-      - "traefik.http.middlewares.add-cors-companion.headers.accesscontrolalloworiginlist=http://local.mlmodelscope.org"
-      - "traefik.http.middlewares.add-cors-companion.headers.accessControlAllowCredentials=true"
-      - "traefik.http.middlewares.add-cors-companion.headers.accessControlAllowHeaders=origin,content-type,accept,uppy-versions"
-      - "traefik.http.middlewares.add-cors-companion.headers.accesscontrolmaxage=100"
-      - "traefik.http.middlewares.add-cors-companion.headers.addvaryheader=true"
-      - "traefik.http.routers.mlmodelscope-companion.middlewares=add-cors-companion"
 
     volumes:
       - /tmp/companion_data:/data
@@ -72,6 +65,13 @@ services:
     ports:
       - "15432:5432"
 
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $DB_USER -d $DB_DBNAME"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
     volumes:
       - ./docker/data:/docker-entrypoint-initdb.d/
 
@@ -80,6 +80,13 @@ services:
       - "5672:5672"
       - "15672:15672"
       - "15692:15692"
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
 
     volumes:
       - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
@@ -94,11 +101,17 @@ services:
     image: traefik:v2.5
     command:
       - "--api.insecure=true"
-      - "--log.level=DEBUG"
+      - "--log.level=INFO"
       - "--providers.file.filename=/root/mlmodelscope-www.yml"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
+
+    depends_on:
+      api:
+        condition: service_healthy
+      companion:
+        condition: service_started
+      trace:
+        condition: service_started
 
     ports:
       - "80:80"
@@ -107,64 +120,16 @@ services:
     networks:
       - traefik
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     volumes:
       - ./docker/mlmodelscope-www.yml:/root/mlmodelscope-www.yml
-      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   trace:
-    image: jaegertracing/all-in-one:1.45 
-
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik"
-      - "traefik.http.routers.trace.rule=Host(`trace.${ENVIRONMENT}mlmodelscope.org`)"
-      - "traefik.http.routers.trace.entrypoints=web"
-      - "traefik.http.services.trace.loadbalancer.server.port=16686"
-    environment:
-      - COLLECTOR_ZIPKIN_HTTP_PORT=9411
-      - COLLECTOR_OTLP_ENABLED=true
-    ports:
-      - "5775:5775/udp"
-      - "6831:6831/udp"
-      - "6832:6832/udp"
-      - "5778:5778"
-      - "16686:16686"
-      - "14268:14268"
-      - "14250:14250"
-      - "9200:9200"
-      - "4317:4317"
-      - "4318:4318"
-      - "9411:9411"
-
     networks:
       - default
       - traefik
-### Monitoring services
-
-  grafana:
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=traefik"
-      - "traefik.http.routers.grafana.rule=Host(`monitoring.${ENVIRONMENT}mlmodelscope.org`)"
-      - "traefik.http.routers.grafana.entrypoints=web"
-      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
-
-    networks:
-      - default
-      - traefik
-
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./docker/grafana/dashboards.yml:/etc/grafana/provisioning/dashboards/rabbitmq.yaml
-      - ./docker/grafana/datasources.yml:/etc/grafana/provisioning/datasources/prometheus.yaml
-      - ./docker/grafana/dashboards:/dashboards
-
-  prometheus:
-    ports:
-      - "9090:9090"
-    volumes:
-      - prometheus_data:/prometheus
-      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
 
 networks:
   traefik:
@@ -173,5 +138,3 @@ networks:
 
 volumes:
   consul_data:
-  prometheus_data:
-  grafana_data:
