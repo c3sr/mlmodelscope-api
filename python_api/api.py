@@ -1,6 +1,7 @@
 
 from fastapi import FastAPI, Depends, HTTPException, Query,Request
 from typing import List, Optional
+from time import perf_counter
 import psycopg2
 import psycopg2.extras
 import os
@@ -23,20 +24,42 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
-#enable cors
+logger = logging.getLogger("mlmodelscope.api")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://local.mlmodelscope.org",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.middleware("http")
-async def add_cors_header(request, call_next):
-    response = await call_next(request)
-    response.headers['Access-Control-Allow-Origin'] = '*'
+async def log_request(request: Request, call_next):
+    started_at = perf_counter()
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception(
+            "%s %s failed",
+            request.method,
+            request.url.path,
+        )
+        raise
+
+    if request.url.path != "/health":
+        logger.info(
+            "%s %s -> %s (%.1f ms)",
+            request.method,
+            request.url.path,
+            response.status_code,
+            (perf_counter() - started_at) * 1000,
+        )
     return response
 
-    # enable cors
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
     logging.error(f"An error occurred: {exc}")
@@ -275,6 +298,10 @@ async def get_framework(framework_id: int):
 async def version():
     return {"version": "0.1.0"}
 
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
 
 @app.get("/experiments/{experiment_id}")
 async def get_experiment(experiment_id: str):
@@ -443,6 +470,43 @@ async def predict(request: PredictRequest):
 async def delete_trial(trial_id: str):
     pass
 
+@app.get("/trial/{trial_id}/status")
+async def get_trial_status(trial_id: str):
+    query = """
+        SELECT requested.id,
+               COALESCE(source.completed_at, requested.completed_at) AS completed_at
+        FROM trials requested
+        LEFT JOIN trials source ON source.id = requested.source_trial_id
+        WHERE requested.id = %s
+    """
+    cur, conn = get_db_cur_con()
+    try:
+        cur.execute(query, (trial_id,))
+        row = cur.fetchone()
+    except Exception as e:
+        logging.error(
+            f"An error occurred: {e} while executing query in get_trial_status"
+        )
+        return JSONResponse(
+            status_code=500,
+            content={"message": "An internal server error occurred."},
+        )
+    finally:
+        cur.close()
+        conn.close()
+
+    if not row:
+        return JSONResponse(
+            status_code=404,
+            content={"message": f"No trial found with ID {trial_id}"},
+        )
+
+    return {
+        "id": row["id"],
+        "completed_at": row["completed_at"],
+        "status": "completed" if row["completed_at"] else "pending",
+    }
+
 @app.get("/trial/{trial_id}")
 async def get_trial(trial_id: str):
     cur,conn=get_db_cur_con()
@@ -597,9 +661,6 @@ async def get_trial(trial_id: str):
     }
 
     return result
-
-
-
 
 
 
