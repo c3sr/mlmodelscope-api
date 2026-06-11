@@ -1,6 +1,6 @@
 
 from fastapi import FastAPI, Depends, HTTPException, Query,Request
-from typing import List, Optional
+from typing import List, Literal, Optional
 from time import perf_counter
 import psycopg2
 import psycopg2.extras
@@ -364,6 +364,12 @@ async def options_predict():
 
 
 
+class ExplanationRequest(BaseModel):
+    enabled: bool = False
+    method: Literal["grad_cam"] = "grad_cam"
+    topK: Literal[2] = 2
+
+
 class PredictRequest(BaseModel):
     architecture: str
     batchSize: int
@@ -371,11 +377,12 @@ class PredictRequest(BaseModel):
     gpu: bool
     inputs: Optional[List[dict]] = Field(default=None)
     # input_url: Optional[str] = Field(default=None)
-    context: Optional[List[str]] = Field(default=[])
+    context: Optional[List[str]] = Field(default_factory=list)
     model: int
     traceLevel: str
-    config : Optional[dict] = Field(default={})
+    config : Optional[dict] = Field(default_factory=dict)
     experiment : Optional[str] = Field(default=None)
+    explanation: ExplanationRequest = Field(default_factory=ExplanationRequest)
 
 @app.post("/predict")
 async def predict(request: PredictRequest):
@@ -400,6 +407,22 @@ async def predict(request: PredictRequest):
     if inputs and len(inputs)>1:
         has_multi_input=True
     config = request.config
+    explanation = (
+        request.explanation.model_dump()
+        if hasattr(request.explanation, "model_dump")
+        else request.explanation.dict()
+    )
+    if explanation["enabled"]:
+        if desired_result_modality != "image_classification":
+            raise HTTPException(
+                status_code=422,
+                detail="Grad-CAM explanations support image classification only.",
+            )
+        if batch_size != 1 or not inputs or len(inputs) != 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Grad-CAM explanations require exactly one input and batch size one.",
+            )
     # print(inputs[0])
     
     experiment_id=request.experiment
@@ -408,12 +431,13 @@ async def predict(request: PredictRequest):
      
     # experiment_id=create_expriement( cur, conn)
 
-    trial= get_trial_by_model_and_input( model_id, inputs)
+    trial= get_trial_by_model_and_input(model_id, inputs, explanation)
     print("-"*20,experiment_id,"-"*20)
     if not experiment_id:
         print("+"*20,"ENTERED IF","+"*20)
         cur,conn=get_db_cur_con()
         experiment_id=create_expriement(cur, conn)
+        close_db_cur_con(cur, conn)
         print("+"*20,"ENTERED IF", experiment_id,"+"*20)
 
 
@@ -428,6 +452,7 @@ async def predict(request: PredictRequest):
         
         model=get_model_by_id(model_id,cur,conn)
         new_trial_id=create_trial( model_id, experiment_id, cur, conn,source_trial)
+        close_db_cur_con(cur, conn)
         # if not experiment_id:
         #     experiment_id=create_expriement(cur, conn)
         print("*"*20,"RETURNING IF TRIAL", experiment_id,"*"*20)
@@ -448,6 +473,7 @@ async def predict(request: PredictRequest):
 
         model=get_model_by_id(model_id,cur,conn)
         framework = get_framework_by_id(model['framework_id'],cur,conn)
+        close_db_cur_con(cur, conn)
 
 
         context={}
@@ -455,7 +481,21 @@ async def predict(request: PredictRequest):
 
         
 
-        message= makePredictMessage(architecture, batch_size, desired_result_modality, gpu, inputs,has_multi_input,context,config, model["name"], trace_level, 0, "localhost:6831")
+        message= makePredictMessage(
+            architecture,
+            batch_size,
+            desired_result_modality,
+            gpu,
+            inputs,
+            has_multi_input,
+            context,
+            config,
+            model["name"],
+            trace_level,
+            0,
+            "localhost:6831",
+            explanation if explanation["enabled"] else None,
+        )
 
         sendPredictMessage(message,queue_name,trial_id)
         print("*"*20,"RETURNING ELSE TRIAL", experiment_id,"*"*20)
@@ -474,7 +514,8 @@ async def delete_trial(trial_id: str):
 async def get_trial_status(trial_id: str):
     query = """
         SELECT requested.id,
-               COALESCE(source.completed_at, requested.completed_at) AS completed_at
+               COALESCE(source.completed_at, requested.completed_at) AS completed_at,
+               COALESCE(source.result, requested.result) AS result
         FROM trials requested
         LEFT JOIN trials source ON source.id = requested.source_trial_id
         WHERE requested.id = %s
@@ -501,10 +542,20 @@ async def get_trial_status(trial_id: str):
             content={"message": f"No trial found with ID {trial_id}"},
         )
 
+    result = row["result"]
+    if isinstance(result, str):
+        try:
+            result = json.loads(result)
+        except json.JSONDecodeError:
+            result = None
+    status = "pending"
+    if row["completed_at"]:
+        status = "failed" if (result or {}).get("error") else "completed"
+
     return {
         "id": row["id"],
         "completed_at": row["completed_at"],
-        "status": "completed" if row["completed_at"] else "pending",
+        "status": status,
     }
 
 @app.get("/trial/{trial_id}")
@@ -661,7 +712,5 @@ async def get_trial(trial_id: str):
     }
 
     return result
-
-
 
 

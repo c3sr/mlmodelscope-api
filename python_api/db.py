@@ -71,7 +71,32 @@ def create_expriement( cur, conn):
     return experiment_id
 
 
-def get_trial_by_model_and_input(model_id, input_urls):
+def _load_result(result):
+    if isinstance(result, str):
+        try:
+            return json.loads(result)
+        except json.JSONDecodeError:
+            return None
+    return result
+
+
+def result_matches_explanation(result, explanation):
+    result = _load_result(result)
+    if not result or result.get("error"):
+        return False
+    if not explanation or not explanation.get("enabled"):
+        return True
+
+    stored = result.get("explanation") or {}
+    return (
+        stored.get("status") == "complete"
+        and stored.get("schemaVersion") == "1.3"
+        and stored.get("method") == explanation.get("method")
+        and stored.get("topK") == explanation.get("topK")
+    )
+
+
+def get_trial_by_model_and_input(model_id, input_urls, explanation=None):
     # Check if input_urls is a list of json objects with src and inputType keys
     if not all(isinstance(item, dict) and 'src' in item and 'inputType' in item for item in input_urls):
         raise ValueError("Each input_url must be a JSON object with 'src' and 'inputType' keys")
@@ -89,65 +114,30 @@ def get_trial_by_model_and_input(model_id, input_urls):
     else:
         return None
 
-    # Main query to get trial details
     query = f"""
-        SELECT trials.*, 
-               experiments.*, 
-               models.*, 
-               trial_inputs.*
+        SELECT trials.id AS trial_id,
+               trials.result
         FROM trials
-        JOIN experiments ON trials.experiment_id = experiments.id
-        JOIN models ON trials.model_id = models.id
-        JOIN trial_inputs ON trials.id = trial_inputs.trial_id
-        WHERE trials.results IS NOT NULL
-        AND trials.model_id = %s
-        AND ({input_query})
-    """
-    
-    print(f"Debug: SQL Query: {query}")
-    print(f"Debug: Input Values: {input_values}")
-
-
-
-    # Main query to get trial details
-    query = f"""
-        SELECT trials.*, 
-               experiments.*, 
-               models.*, 
-               trial_inputs.*
-        FROM trials
-        JOIN experiments ON trials.experiment_id = experiments.id
-        JOIN models ON trials.model_id = models.id
         JOIN trial_inputs ON trials.id = trial_inputs.trial_id
         WHERE trials.completed_at IS NOT NULL
         AND trials.model_id = %s
         AND ({input_query})
+        ORDER BY trials.completed_at DESC
     """
-    debug_query = query % tuple([model_id] + input_values)
-    print(f"Debug: SQL Query: {debug_query}")
-    # Execute the query
+    cur = None
+    conn = None
     try:
-        # Replace with your database connection setup
         cur, conn = get_db_cur_con()
         cur.execute(query, [model_id] + input_values)
-
-        # Fetch the result
-        trial = cur.fetchone()
-
-        if trial is None:
-            print("Debug: No trial found")
-            return None
-        
-        # Fetch column names for reference
-        colnames = [desc[0] for desc in cur.description]
-        # print(f"Debug: Columns: {colnames}")
-        # print(f"Debug: Trial Data: {trial}")
-
-        # Assuming the columns are returned in the order you expect
-        # You may need to adjust this depending on your database schema
-        return (trial['trial_id'])
-
-
+        for trial in cur.fetchall():
+            if result_matches_explanation(trial["result"], explanation):
+                return trial["trial_id"]
+        return None
     except (Exception, psycopg2.DatabaseError) as error:
         print(f"Error: {error}")
         return None
+    finally:
+        if cur is not None:
+            cur.close()
+        if conn is not None:
+            conn.close()

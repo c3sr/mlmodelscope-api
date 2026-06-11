@@ -22,8 +22,8 @@ def connect():
     )
     return pika.BlockingConnection(parameters)
 
-def makePredictMessage(architecture, batch_size, desired_result_modality, gpu, inputs,has_multi_input,context,config,model_name, trace_level, warmups, tracer_address):
-    return {
+def makePredictMessage(architecture, batch_size, desired_result_modality, gpu, inputs,has_multi_input,context,config,model_name, trace_level, warmups, tracer_address, explanation=None):
+    message = {
         "BatchSize": batch_size,
         "DesiredResultModality": desired_result_modality,
         "InputFiles": inputs,
@@ -36,6 +36,9 @@ def makePredictMessage(architecture, batch_size, desired_result_modality, gpu, i
         "TracerAddress": tracer_address,
         "UseGpu": gpu
     }
+    if explanation:
+        message["Explanation"] = explanation
+    return message
 
 def sendPredictMessage(message, queue_name, correlation_id):
     while True:
