@@ -102,6 +102,75 @@ def ensure_local_gpt2_model(cur, conn):
     model = cur.fetchone()
     return model["id"] if model else None
 
+
+def ensure_pyannote_diarization_model(cur, conn):
+    cur.execute(
+        "SELECT id FROM models WHERE LOWER(name) = %s AND output_type = %s",
+        ("pyannote_diarization", "audio_diarization"),
+    )
+    model = cur.fetchone()
+    if model:
+        return model["id"]
+
+    cur.execute("SELECT id FROM frameworks WHERE LOWER(name) = %s", ("pytorch",))
+    framework = cur.fetchone()
+    if not framework:
+        raise ValueError("PyTorch framework metadata is required for audio diarization.")
+
+    cur.execute(
+        """
+        INSERT INTO models (
+            created_at, updated_at, attribute_top1, attribute_top5,
+            attribute_kind, attribute_manifest_author, attribute_training_dataset,
+            description, detail_graph_checksum, detail_graph_path,
+            detail_weights_checksum, detail_weights_path, framework_id,
+            input_description, input_type, license, name, output_description,
+            output_type, version, short_description, url_github, url_citation,
+            url_link1, url_link2
+        )
+        VALUES (
+            %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s
+        )
+        RETURNING id
+        """,
+        (
+            datetime.now(),
+            datetime.now(),
+            "",
+            "",
+            "diarization",
+            "Pyannote",
+            "VoxCeleb",
+            "Speaker diarization with pyannote.audio identifies who spoke when.",
+            "",
+            "huggingface:pyannote/speaker-diarization-3.1",
+            "",
+            "",
+            framework["id"],
+            "An audio file containing one or more speakers.",
+            "AUDIO",
+            "MIT",
+            "pyannote_diarization",
+            "Speaker labels with start and end timestamps.",
+            "audio_diarization",
+            "3.1",
+            "Pyannote speaker diarization.",
+            "https://github.com/pyannote/pyannote-audio",
+            "",
+            "https://huggingface.co/pyannote/speaker-diarization-3.1",
+            "",
+        ),
+    )
+    inserted = cur.fetchone()
+    conn.commit()
+    return inserted["id"]
+
 def get_model_by_id(model_id, cur, conn):
         cur.execute("SELECT name, version, framework_id FROM models WHERE id = %s", (model_id,))
         model = cur.fetchone()

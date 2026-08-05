@@ -45,6 +45,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+def seed_audio_diarization_model():
+    cur = None
+    conn = None
+    try:
+        cur, conn = get_db_cur_con()
+        model_id = ensure_pyannote_diarization_model(cur, conn)
+        logger.info("Audio diarization model metadata is ready (id=%s).", model_id)
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+        logger.warning("Unable to seed audio diarization model metadata: %s", e)
+    finally:
+        if cur is not None and conn is not None:
+            close_db_cur_con(cur, conn)
+
 @app.middleware("http")
 async def log_request(request: Request, call_next):
     started_at = perf_counter()
