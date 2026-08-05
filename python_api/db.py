@@ -10,15 +10,97 @@ import time
 DB_HOST = os.environ.get('DB_HOST', 'localhost')
 DB_PORT = os.environ.get('DB_PORT', '15432')
 DB_USER = os.environ.get('DB_USER', 'postgres')
-DB_PASS = os.environ.get('DB_PASS', 'password')
+DB_PASS = os.environ.get('DB_PASS', os.environ.get('DB_PASSWORD', ''))
 DB_NAME = os.environ.get('DB_NAME', 'postgres')
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+LOCAL_GPT2_MODEL_ID = 10000
+
+
 def get_db_cur_con(cursor_factory=psycopg2.extras.RealDictCursor):
     conn = psycopg2.connect(DATABASE_URL)
     
     cur = conn.cursor(cursor_factory=cursor_factory)
     return cur, conn
+
+
+def ensure_local_gpt2_model(cur, conn):
+    cur.execute(
+        "SELECT id FROM models WHERE LOWER(name) = %s AND output_type = %s",
+        ("gpt_2", "text_to_text"),
+    )
+    model = cur.fetchone()
+    if model:
+        return model["id"]
+
+    cur.execute("SELECT id FROM frameworks WHERE LOWER(name) = %s", ("pytorch",))
+    framework = cur.fetchone()
+    if not framework:
+        raise ValueError("PyTorch framework metadata is required for local GPT-2.")
+
+    cur.execute(
+        """
+        INSERT INTO models (
+            id, created_at, updated_at, attribute_top1, attribute_top5,
+            attribute_kind, attribute_manifest_author, attribute_training_dataset,
+            description, detail_graph_checksum, detail_graph_path,
+            detail_weights_checksum, detail_weights_path, framework_id,
+            input_description, input_type, license, name, output_description,
+            output_type, version, short_description, url_github, url_citation,
+            url_link1, url_link2
+        )
+        VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s
+        )
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
+        """,
+        (
+            LOCAL_GPT2_MODEL_ID,
+            datetime.now(),
+            datetime.now(),
+            "",
+            "",
+            "Transformer",
+            "OpenAI",
+            "WebText",
+            "PyTorch GPT-2 text generation model for local text-to-text experiments.",
+            "",
+            "huggingface:gpt2",
+            "",
+            "",
+            framework["id"],
+            "Input prompt text.",
+            "TEXT",
+            "MIT",
+            "GPT_2",
+            "Generated continuation text.",
+            "text_to_text",
+            "1.0",
+            "GPT-2 is a transformer language model that generates a continuation from a text prompt.",
+            "https://github.com/huggingface/transformers",
+            "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf",
+            "https://huggingface.co/gpt2",
+            "",
+        ),
+    )
+    inserted = cur.fetchone()
+    conn.commit()
+    if inserted:
+        return inserted["id"]
+
+    cur.execute(
+        "SELECT id FROM models WHERE id = %s",
+        (LOCAL_GPT2_MODEL_ID,),
+    )
+    model = cur.fetchone()
+    return model["id"] if model else None
 
 def get_model_by_id(model_id, cur, conn):
         cur.execute("SELECT name, version, framework_id FROM models WHERE id = %s", (model_id,))

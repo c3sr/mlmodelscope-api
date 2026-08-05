@@ -79,6 +79,10 @@ async def get_models(
     # cur
     # cur = db.cur(cur_factory=psycopg2.extras.Dictcur)
     cur,conn=get_db_cur_con()
+    try:
+        ensure_local_gpt2_model(cur, conn)
+    except Exception as e:
+        logger.warning("Unable to ensure local GPT-2 model metadata: %s", e)
     sql_query = """
     SELECT models.*, frameworks.name as framework_name, frameworks.version as framework_version, array_agg(architectures.name) as architectures
     FROM models
@@ -366,8 +370,92 @@ async def options_predict():
 
 class ExplanationRequest(BaseModel):
     enabled: bool = False
-    method: Literal["grad_cam"] = "grad_cam"
-    topK: Literal[2] = 2
+    method: Literal["grad_cam", "token_probability"] = "grad_cam"
+    topK: int = Field(default=2, ge=2, le=10)
+    userLevel: Literal["beginner", "intermediate", "advanced"] = "intermediate"
+    detailLevel: Optional[Literal["concise", "standard", "detailed"]] = None
+    terminology: Optional[Literal["plain", "balanced", "technical"]] = None
+    evidenceView: Optional[Literal["focus", "intensity", "both"]] = None
+    includePipeline: Optional[bool] = None
+    includeTechnicalDetails: Optional[bool] = None
+    includeLimitations: Optional[bool] = None
+
+
+EXPLANATION_PROFILE_DEFAULTS = {
+    "beginner": {
+        "detailLevel": "concise",
+        "terminology": "plain",
+        "evidenceView": "focus",
+        "includePipeline": True,
+        "includeTechnicalDetails": False,
+        "includeLimitations": True,
+    },
+    "intermediate": {
+        "detailLevel": "standard",
+        "terminology": "balanced",
+        "evidenceView": "both",
+        "includePipeline": True,
+        "includeTechnicalDetails": True,
+        "includeLimitations": True,
+    },
+    "advanced": {
+        "detailLevel": "detailed",
+        "terminology": "technical",
+        "evidenceView": "both",
+        "includePipeline": True,
+        "includeTechnicalDetails": True,
+        "includeLimitations": True,
+    },
+}
+
+
+def normalize_explanation_settings(explanation_request):
+    explanation = (
+        explanation_request.model_dump()
+        if hasattr(explanation_request, "model_dump")
+        else explanation_request.dict()
+    )
+    user_level = explanation.get("userLevel", "intermediate")
+    profile = EXPLANATION_PROFILE_DEFAULTS[user_level]
+
+    audience = {"userLevel": user_level}
+    for key, default_value in profile.items():
+        audience[key] = (
+            explanation[key]
+            if explanation.get(key) is not None
+            else default_value
+        )
+
+    return {
+        "enabled": explanation["enabled"],
+        "method": explanation["method"],
+        "topK": explanation["topK"],
+        "audience": audience,
+    }
+
+
+@app.get("/explanation/profiles")
+async def get_explanation_profiles():
+    return {
+        "levels": [
+            {
+                "userLevel": "beginner",
+                "description": "Plain-language explanation with the main evidence view first.",
+                "defaults": EXPLANATION_PROFILE_DEFAULTS["beginner"],
+            },
+            {
+                "userLevel": "intermediate",
+                "description": "Balanced explanation with pipeline context and technical terms introduced carefully.",
+                "defaults": EXPLANATION_PROFILE_DEFAULTS["intermediate"],
+            },
+            {
+                "userLevel": "advanced",
+                "description": "Technical explanation retaining raw logits, method details, and limitations.",
+                "defaults": EXPLANATION_PROFILE_DEFAULTS["advanced"],
+            },
+        ],
+        "supportedMethods": ["grad_cam", "token_probability"],
+    }
 
 
 class PredictRequest(BaseModel):
@@ -407,21 +495,37 @@ async def predict(request: PredictRequest):
     if inputs and len(inputs)>1:
         has_multi_input=True
     config = request.config
-    explanation = (
-        request.explanation.model_dump()
-        if hasattr(request.explanation, "model_dump")
-        else request.explanation.dict()
-    )
+    explanation = normalize_explanation_settings(request.explanation)
     if explanation["enabled"]:
-        if desired_result_modality != "image_classification":
+        if explanation["method"] == "grad_cam" and desired_result_modality != "image_classification":
             raise HTTPException(
                 status_code=422,
                 detail="Grad-CAM explanations support image classification only.",
             )
+        if explanation["method"] == "grad_cam" and explanation["topK"] != 2:
+            raise HTTPException(
+                status_code=422,
+                detail="Grad-CAM explanations support topK 2 only.",
+            )
+        if explanation["method"] == "token_probability" and desired_result_modality != "text_to_text":
+            raise HTTPException(
+                status_code=422,
+                detail="Token probability explanations support text-to-text generation only.",
+            )
+        if desired_result_modality == "image_classification" and explanation["method"] != "grad_cam":
+            raise HTTPException(
+                status_code=422,
+                detail="Image classification explanations require method grad_cam.",
+            )
+        if desired_result_modality == "text_to_text" and explanation["method"] != "token_probability":
+            raise HTTPException(
+                status_code=422,
+                detail="Text-to-text explanations require method token_probability.",
+            )
         if batch_size != 1 or not inputs or len(inputs) != 1:
             raise HTTPException(
                 status_code=422,
-                detail="Grad-CAM explanations require exactly one input and batch size one.",
+                detail="Explanations require exactly one input and batch size one.",
             )
     # print(inputs[0])
     
@@ -430,6 +534,13 @@ async def predict(request: PredictRequest):
    
      
     # experiment_id=create_expriement( cur, conn)
+
+    if desired_result_modality == "text_to_text":
+        cur, conn = get_db_cur_con()
+        try:
+            ensure_local_gpt2_model(cur, conn)
+        finally:
+            close_db_cur_con(cur, conn)
 
     trial= get_trial_by_model_and_input(model_id, inputs, explanation)
     print("-"*20,experiment_id,"-"*20)
@@ -456,7 +567,7 @@ async def predict(request: PredictRequest):
         # if not experiment_id:
         #     experiment_id=create_expriement(cur, conn)
         print("*"*20,"RETURNING IF TRIAL", experiment_id,"*"*20)
-        return {"experimentId": experiment_id, "trialId": new_trial_id, "model_id": model["name"], "input_url": inputs}
+        return {"experimentId": experiment_id, "trialId": new_trial_id, "model_id": model["name"], "input_url": inputs, "explanation": explanation if explanation["enabled"] else None}
     else:
         cur,conn=get_db_cur_con()
 
@@ -499,7 +610,7 @@ async def predict(request: PredictRequest):
 
         sendPredictMessage(message,queue_name,trial_id)
         print("*"*20,"RETURNING ELSE TRIAL", experiment_id,"*"*20)
-        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"],"input_url": inputs}
+        return {"experimentId": experiment_id, "trialId": trial_id, "model_id": model["name"],"input_url": inputs, "explanation": explanation if explanation["enabled"] else None}
 
 
 
@@ -712,5 +823,3 @@ async def get_trial(trial_id: str):
     }
 
     return result
-
-
