@@ -1,17 +1,21 @@
 
-from fastapi import FastAPI, Depends, HTTPException, Query,Request
+from fastapi import FastAPI, Depends, HTTPException, Query, Request, UploadFile, File
 from typing import List, Literal, Optional
 from time import perf_counter
 import psycopg2
 import psycopg2.extras
 import os
+import mimetypes
+import re
+import shutil
 # from pydantic import BaseModel
 import uvicorn
 import json
 import pika
 import os
 from db import *
-from fastapi.responses import JSONResponse
+from pathlib import Path
+from fastapi.responses import JSONResponse, FileResponse
 from pydantic import BaseModel, Field
 import uuid
 from mq import *
@@ -25,6 +29,10 @@ from fastapi.middleware.cors import CORSMiddleware
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("mlmodelscope.api")
+
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/tmp/mlmodelscope_uploads"))
+UPLOAD_URL_BASE = os.environ.get("UPLOAD_URL_BASE", "").rstrip("/")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 app.add_middleware(
     CORSMiddleware,
@@ -305,6 +313,59 @@ async def version():
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+def safe_upload_name(filename: Optional[str]) -> str:
+    name = Path(filename or "upload").name
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._")
+    return name or "upload"
+
+
+def upload_public_url(request: Request, upload_id: str) -> str:
+    base_url = UPLOAD_URL_BASE or str(request.base_url).rstrip("/")
+    return f"{base_url}/uploads/{upload_id}"
+
+
+@app.post("/uploads")
+async def upload_input_file(request: Request, file: UploadFile = File(...)):
+    original_name = safe_upload_name(file.filename)
+    extension = Path(original_name).suffix
+    upload_id = f"{uuid.uuid4().hex}{extension}"
+    upload_path = UPLOAD_DIR / upload_id
+
+    try:
+        with upload_path.open("wb") as output_file:
+            shutil.copyfileobj(file.file, output_file)
+    except Exception:
+        logger.exception("Failed to store uploaded file %s", original_name)
+        raise HTTPException(status_code=500, detail="Failed to store uploaded file.")
+    finally:
+        await file.close()
+
+    content_type = (
+        file.content_type
+        or mimetypes.guess_type(original_name)[0]
+        or "application/octet-stream"
+    )
+    return {
+        "url": upload_public_url(request, upload_id),
+        "filename": original_name,
+        "contentType": content_type,
+    }
+
+
+@app.get("/uploads/{upload_id}")
+async def get_uploaded_input(upload_id: str):
+    safe_id = safe_upload_name(upload_id)
+    if safe_id != upload_id:
+        raise HTTPException(status_code=404, detail="Uploaded file not found.")
+
+    upload_path = UPLOAD_DIR / safe_id
+    if not upload_path.exists() or not upload_path.is_file():
+        raise HTTPException(status_code=404, detail="Uploaded file not found.")
+
+    media_type = mimetypes.guess_type(safe_id)[0] or "application/octet-stream"
+    return FileResponse(upload_path, media_type=media_type)
 
 
 @app.get("/experiments/{experiment_id}")
