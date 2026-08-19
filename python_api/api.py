@@ -104,9 +104,9 @@ async def get_models(
     # cur = db.cur(cur_factory=psycopg2.extras.Dictcur)
     cur,conn=get_db_cur_con()
     try:
-        ensure_local_gpt2_model(cur, conn)
+        ensure_local_text_to_text_models(cur, conn)
     except Exception as e:
-        logger.warning("Unable to ensure local GPT-2 model metadata: %s", e)
+        logger.warning("Unable to ensure local text-to-text model metadata: %s", e)
     sql_query = """
     SELECT models.*, frameworks.name as framework_name, frameworks.version as framework_version, array_agg(architectures.name) as architectures
     FROM models
@@ -615,7 +615,7 @@ async def predict(request: PredictRequest):
     if desired_result_modality == "text_to_text":
         cur, conn = get_db_cur_con()
         try:
-            ensure_local_gpt2_model(cur, conn)
+            ensure_local_text_to_text_models(cur, conn)
         finally:
             close_db_cur_con(cur, conn)
 

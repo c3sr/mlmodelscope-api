@@ -15,6 +15,7 @@ DB_NAME = os.environ.get('DB_NAME', 'postgres')
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 LOCAL_GPT2_MODEL_ID = 10000
+LOCAL_BLOOM_560M_MODEL_ID = 10001
 
 
 def get_db_cur_con(cursor_factory=psycopg2.extras.RealDictCursor):
@@ -22,6 +23,13 @@ def get_db_cur_con(cursor_factory=psycopg2.extras.RealDictCursor):
     
     cur = conn.cursor(cursor_factory=cursor_factory)
     return cur, conn
+
+
+def ensure_local_text_to_text_models(cur, conn):
+    return [
+        ensure_local_gpt2_model(cur, conn),
+        ensure_local_bloom_560m_model(cur, conn),
+    ]
 
 
 def ensure_local_gpt2_model(cur, conn):
@@ -98,6 +106,85 @@ def ensure_local_gpt2_model(cur, conn):
     cur.execute(
         "SELECT id FROM models WHERE id = %s",
         (LOCAL_GPT2_MODEL_ID,),
+    )
+    model = cur.fetchone()
+    return model["id"] if model else None
+
+
+def ensure_local_bloom_560m_model(cur, conn):
+    cur.execute(
+        "SELECT id FROM models WHERE LOWER(name) = %s AND output_type = %s",
+        ("bloom_560m", "text_to_text"),
+    )
+    model = cur.fetchone()
+    if model:
+        return model["id"]
+
+    cur.execute("SELECT id FROM frameworks WHERE LOWER(name) = %s", ("pytorch",))
+    framework = cur.fetchone()
+    if not framework:
+        raise ValueError("PyTorch framework metadata is required for local BLOOM-560M.")
+
+    cur.execute(
+        """
+        INSERT INTO models (
+            id, created_at, updated_at, attribute_top1, attribute_top5,
+            attribute_kind, attribute_manifest_author, attribute_training_dataset,
+            description, detail_graph_checksum, detail_graph_path,
+            detail_weights_checksum, detail_weights_path, framework_id,
+            input_description, input_type, license, name, output_description,
+            output_type, version, short_description, url_github, url_citation,
+            url_link1, url_link2
+        )
+        VALUES (
+            %s, %s, %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s
+        )
+        ON CONFLICT (id) DO NOTHING
+        RETURNING id
+        """,
+        (
+            LOCAL_BLOOM_560M_MODEL_ID,
+            datetime.now(),
+            datetime.now(),
+            "",
+            "",
+            "Transformer",
+            "BigScience",
+            "ROOTS",
+            "PyTorch BLOOM-560M text generation model for local text-to-text experiments.",
+            "",
+            "huggingface:bigscience/bloom-560m",
+            "",
+            "",
+            framework["id"],
+            "Input prompt text.",
+            "TEXT",
+            "BigScience RAIL License",
+            "bloom_560m",
+            "Generated continuation text.",
+            "text_to_text",
+            "1.0",
+            "BLOOM-560M is a multilingual transformer language model that generates continuations from text prompts.",
+            "https://github.com/huggingface/transformers",
+            "https://arxiv.org/abs/2211.05100",
+            "https://huggingface.co/bigscience/bloom-560m",
+            "",
+        ),
+    )
+    inserted = cur.fetchone()
+    conn.commit()
+    if inserted:
+        return inserted["id"]
+
+    cur.execute(
+        "SELECT id FROM models WHERE id = %s",
+        (LOCAL_BLOOM_560M_MODEL_ID,),
     )
     model = cur.fetchone()
     return model["id"] if model else None
